@@ -25,9 +25,9 @@
 
 #include <asm/asm-offsets.h>
 #include <asm/cpufeature.h>
-#include <asm/cputype.h>
 #include <asm/page.h>
 #include <asm/pgtable-hwdef.h>
+#include <asm/cputype.h>
 #include <asm/ptrace.h>
 #include <asm/thread_info.h>
 
