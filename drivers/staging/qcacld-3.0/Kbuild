@@ -184,6 +184,15 @@ ifneq ($(CONFIG_ROME_IF),sdio)
 	#Flag to enable DISA
 	CONFIG_WLAN_FEATURE_DISA := y
 
+	#Flag to enable OWE
+	CONFIG_WLAN_FEATURE_OWE := y
+
+	#Flag to enable GMAC
+	CONFIG_WLAN_FEATURE_GMAC := y
+
+	#Flag to enable SAE
+	CONFIG_WLAN_FEATURE_SAE := y
+
 	#Flag to enable Fast Path feature
 	CONFIG_WLAN_FASTPATH := y
 
@@ -245,6 +254,15 @@ CONFIG_WLAN_SPECTRAL_SCAN := y
 
 # Flag to enable Android Packet Filtering
 CONFIG_WLAN_FEATURE_APF := y
+
+#Flag to enable OWE
+CONFIG_WLAN_FEATURE_OWE := y
+
+#Flag to enable GMAC
+CONFIG_WLAN_FEATURE_GMAC := y
+
+#Flag to enable SAE
+CONFIG_WLAN_FEATURE_SAE := y
 
 #Enable WLAN/Power debugfs feature only if debug_fs is enabled
 ifeq ($(CONFIG_DEBUG_FS), y)
@@ -1392,6 +1410,18 @@ endif
 
 ifeq ($(CONFIG_WLAN_POWER_DEBUGFS), y)
 CDEFINES += -DWLAN_POWER_DEBUGFS
+endif
+
+ifeq ($(CONFIG_WLAN_FEATURE_OWE),y)
+CDEFINES += -DWLAN_FEATURE_OWE
+endif
+
+ifeq ($(CONFIG_WLAN_FEATURE_GMAC),y)
+CDEFINES += -DWLAN_FEATURE_GMAC
+endif
+
+ifeq ($(CONFIG_WLAN_FEATURE_SAE),y)
+CDEFINES += -DWLAN_FEATURE_SAE
 endif
 
 ifeq ($(BUILD_DIAG_VERSION),1)
