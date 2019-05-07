@@ -41,8 +41,6 @@ void sdcardfs_destroy_dentry_cache(void)
 
 void free_dentry_private_data(struct dentry *dentry)
 {
-	if (!dentry || !dentry->d_fsdata)
-		return;
 	kmem_cache_free(sdcardfs_dentry_cachep, dentry->d_fsdata);
 	dentry->d_fsdata = NULL;
 }
@@ -199,7 +197,8 @@ static struct dentry *__sdcardfs_interpose(struct dentry *dentry,
 
 	ret_dentry = d_splice_alias(inode, dentry);
 	dentry = ret_dentry ?: dentry;
-	update_derived_permission_lock(dentry);
+	if (!IS_ERR(dentry))
+		update_derived_permission_lock(dentry);
 out:
 	return ret_dentry;
 }
