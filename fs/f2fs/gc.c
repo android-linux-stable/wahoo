@@ -880,7 +880,7 @@ stop:
 
 	put_gc_inode(&gc_list);
 
-	if (sync && !ret)
+	if (sync)
 		ret = sec_freed ? 0 : -EAGAIN;
 	return ret;
 }
