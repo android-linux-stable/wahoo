@@ -1807,6 +1807,8 @@ static QDF_STATUS hdd_dis_connect_handler(hdd_adapter_t *pAdapter,
 	/* Clear saved connection information in HDD */
 	hdd_conn_remove_connect_info(pHddStaCtx);
 	hdd_conn_set_connection_state(pAdapter, eConnectionState_NotConnected);
+	/* Clear roaming in progress flag */
+	hdd_set_roaming_in_progress(false);
 #ifdef WLAN_FEATURE_GTK_OFFLOAD
 	if ((QDF_STA_MODE == pAdapter->device_mode) ||
 	    (QDF_P2P_CLIENT_MODE == pAdapter->device_mode)) {
@@ -6027,6 +6029,10 @@ int hdd_set_csr_auth_type(hdd_adapter_t *pAdapter, eCsrAuthType RSNAuthType)
 					RSNAuthType;
 				hdd_debug("updated profile authtype as %d",
 					RSNAuthType);
+			} else if (RSNAuthType ==  eCSR_AUTH_TYPE_SAE) {
+				/* SAE with open authentication case */
+				pRoamProfile->AuthType.authType[0] =
+					eCSR_AUTH_TYPE_SAE;
 			} else if ((RSNAuthType ==
 				  eCSR_AUTH_TYPE_SUITEB_EAP_SHA256) &&
 				  ((pWextState->

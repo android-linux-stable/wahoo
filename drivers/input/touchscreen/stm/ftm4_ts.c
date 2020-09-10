@@ -1021,10 +1021,10 @@ static unsigned char fts_event_handler_type_b(struct fts_ts_info *info,
 			info->fts_power_state );
 #endif
 
-	if (info->fts_power_state == FTS_POWER_STATE_LOWPOWER)
-		EventID = data[EventNum * FTS_EVENT_SIZE] & 0xFF;
-	else
-		EventID = data[EventNum * FTS_EVENT_SIZE] & 0x0F;
+		if (info->fts_power_state == FTS_POWER_STATE_LOWPOWER)
+			EventID = data[EventNum * FTS_EVENT_SIZE] & 0xFF;
+		else
+			EventID = data[EventNum * FTS_EVENT_SIZE] & 0x0F;
 
 		if ((EventID >= 3) && (EventID <= 5)) {
 			LastLeftEvent = 0;
@@ -1312,6 +1312,21 @@ static void fts_ta_cb(struct fts_callbacks *cb, int ta_status)
 	}
 }
 #endif
+
+/**
+ * fts_hard_interrupt_handler()
+ * Called by the kernel when the touch interrupt occurs.
+ * This represents the top half of the interrupt.
+ *
+ * Set the input event timestamp here to ensure that we have an accurate
+ * estimate of when the touch event actually occurred.
+ */
+static irqreturn_t fts_hard_interrupt_handler(int irq, void *handle)
+{
+	struct fts_ts_info *info = handle;
+	input_set_timestamp(info->input_dev, ktime_get());
+	return IRQ_WAKE_THREAD;
+}
 
 /**
  * fts_interrupt_handler()
@@ -1932,7 +1947,7 @@ static int fts_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 		goto err_enable_irq;
 	}
 
-	retval = request_threaded_irq(info->irq, NULL,
+	retval = request_threaded_irq(info->irq, fts_hard_interrupt_handler,
 			fts_interrupt_handler, info->board->irq_type,
 			FTS_TS_DRV_NAME, info);
 	if (retval < 0) {

@@ -69,7 +69,7 @@
 #define MNH_RSTC_OUTf(...) \
 	HW_OUTf(HWIO_SCU_BASE_ADDR, SCU, RSTC, __VA_ARGS__)
 
-#define WRITE_DDR_REG_CONFIG(_state, ddrblock, regindex) \
+#define WRITE_DDR_REG_CONFIG(ddrblock, regindex) \
 do { \
 	if (_state->ddrblock[regindex]) { \
 		mnh_reg_write(_state->ddrblock##_base + \
@@ -78,7 +78,7 @@ do { \
 	} \
 } while (0)
 
-#define WRITE_DDR_PHY_CONFIG(_state, fsp, regindex)    \
+#define WRITE_DDR_PHY_CONFIG(fsp, regindex)    \
 do { \
 	if (_state->phy[fsp][regindex]) { \
 		mnh_reg_write(_state->phy_base + (regindex * sizeof(u32)), \
@@ -86,27 +86,27 @@ do { \
 	} \
 } while (0)
 
-#define WRITE_SET_ELEMENT(_state, regindex, regvalue)	\
+#define WRITE_SET_ELEMENT(regindex, regvalue)	\
 	mnh_reg_write(_state->phy_base + (regindex * sizeof(u32)),\
 		regvalue)
 
-#define WRITE_SCU_FSP(_state, fsp) \
+#define WRITE_SCU_FSP(fsp) \
 do { \
 	_state->fsps[fsp] &= 0xFFFFFF00;\
 	_state->fsps[fsp] |= 0x7d;\
 	MNH_SCU_OUTx(LPDDR4_FSP_SETTING, fsp, _state->fsps[fsp]); \
 } while (0)
 
-#define SAVE_CURRENT_FSP(dev, _state) \
+#define SAVE_CURRENT_FSP() \
 do { \
 	_state->suspend_fsp = \
 		MNH_SCU_INf(LPDDR4_LOW_POWER_STS, LPDDR4_CUR_FSP); \
 	dev_dbg(dev, "%s: saved fsp: %d\n", __func__, _state->suspend_fsp); \
 } while (0)
 
-#define SAVED_FSP(_state) _state->suspend_fsp
+#define SAVED_FSP() _state->suspend_fsp
 
-#define WRITE_CLK_FROM_FSP(dev, _state, fsp) \
+#define WRITE_CLK_FROM_FSP(fsp) \
 do { \
 	if (fsp < (MNH_DDR_NUM_FSPS)) { \
 		MNH_SCU_OUTf(CCU_CLK_DIV, LPDDR4_REFCLK_DIV, \
@@ -125,20 +125,20 @@ do { \
 		dev_err(dev, "%s: invalid fsp 0x%x", __func__, fsp); \
 } while (0)
 
-#define SAVE_DDR_REG_CONFIG(_state, ddrblock, regindex) \
+#define SAVE_DDR_REG_CONFIG(ddrblock, regindex) \
 do { \
 	_state->ddrblock[regindex] = \
 		mnh_reg_read(_state->ddrblock##_base + \
-				(regindex * sizeof(u32))); \
+					((regindex) * sizeof(u32))); \
 } while (0)
 
-#define SAVE_DDR_PHY_REG_CONFIG(_state, fsp, regindex) \
+#define SAVE_DDR_PHY_REG_CONFIG(fsp, regindex) \
 do { \
 	_state->phy[fsp][regindex] = \
-		mnh_reg_read(_state->phy_base + (regindex * sizeof(u32))); \
+		mnh_reg_read(_state->phy_base + ((regindex) * sizeof(u32))); \
 } while (0)
 
-#define CLR_START(_state, ddrblock) (_state->ddrblock[0] &= (0xFFFFFFFE))
+#define CLR_START(ddrblock) (_state->ddrblock[0] &= (0xFFFFFFFE))
 
 /* timeout for training all FSPs */
 #define TRAINING_TIMEOUT msecs_to_jiffies(45)
@@ -153,8 +153,25 @@ do { \
 #define LP_CMD_SBIT 5
 #define INIT_DONE_SBIT 4
 
+static struct mnh_ddr_internal_state *_state;
+
+static u32 mnh_ddr_sanity_check(void)
+{
+	/* just verify comm is actually up */
+	u32 val = MNH_DDR_CTL_IN(00);
+
+	/*
+	 * If above register reads either 0 or all FF, it indicates that
+	 * access to DDR CTL registers are not ready.
+	 */
+	if ((val == 0) || (val == 0xFFFFFFFF))
+		return 0;
+	else
+		return 1;
+}
+
 /* read entire int_status */
-u64 mnh_ddr_int_status(struct device *dev)
+u64 mnh_ddr_int_status(void)
 {
 	u64 int_stat = ((u64)MNH_DDR_CTL_IN(228) << 32) | MNH_DDR_CTL_IN(227);
 	return int_stat;
@@ -162,16 +179,16 @@ u64 mnh_ddr_int_status(struct device *dev)
 EXPORT_SYMBOL(mnh_ddr_int_status);
 
 /* clear entire int_status */
-int mnh_ddr_clr_int_status(struct device *dev)
+int mnh_ddr_clr_int_status(void)
 {
 	u64 stat = 0;
 
 	MNH_DDR_CTL_OUT(230, 0x0F);
 	MNH_DDR_CTL_OUT(229, 0xFFFFFFFF);
-	stat = mnh_ddr_int_status(dev);
+	stat = mnh_ddr_int_status();
 	if (stat) {
-		dev_err(dev, "%s: int stat not all clear: %llx\n", __func__,
-			stat);
+		pr_err("%s: int stat not all clear: %llx\n",
+			__func__, stat);
 		return -EIO;
 	}
 	return 0;
@@ -202,7 +219,7 @@ static u32 mnh_ddr_int_status_bit(u8 sbit)
 }
 
 /* clear single bit in int_status */
-static int mnh_ddr_clr_int_status_bit(struct device *dev, u8 sbit)
+static int mnh_ddr_clr_int_status_bit(u8 sbit)
 {
 	const u32 max_int_status_bit = 35;
 	const u32 first_upper_bit = 32;
@@ -216,17 +233,17 @@ static int mnh_ddr_clr_int_status_bit(struct device *dev, u8 sbit)
 		MNH_DDR_CTL_OUT(229, 1 << sbit);
 
 	if (mnh_ddr_int_status_bit(sbit)) {
-		dev_err(dev, "%s: bit %d is still set.\n", __func__, sbit);
+		pr_err("%s: bit %d is still set.\n", __func__, sbit);
 		return -EIO;
 	}
 	return 0;
 }
 
-static int mnh_ddr_send_lp_cmd(struct device *dev, u8 cmd)
+static int mnh_ddr_send_lp_cmd(u8 cmd)
 {
 	u32 timeout = 100000;
 
-	dev_dbg(dev, "%s sending cmd: 0x%x\n", __func__, cmd);
+	pr_debug("%s sending cmd: 0x%x\n", __func__, cmd);
 	MNH_DDR_CTL_OUTf(112, LP_CMD, cmd);
 
 	while (!mnh_ddr_int_status_bit(LP_CMD_SBIT) && --timeout)
@@ -235,7 +252,7 @@ static int mnh_ddr_send_lp_cmd(struct device *dev, u8 cmd)
 	if (!mnh_ddr_int_status_bit(LP_CMD_SBIT))
 		return -ETIMEDOUT;
 
-	return mnh_ddr_clr_int_status_bit(dev, LP_CMD_SBIT);
+	return mnh_ddr_clr_int_status_bit(LP_CMD_SBIT);
 }
 
 static void mnh_ddr_enable_lp(void)
@@ -246,17 +263,16 @@ static void mnh_ddr_enable_lp(void)
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_EXIT_EN, 0xF);
 }
 
-static void mnh_ddr_disable_lp(struct device *dev)
+static void mnh_ddr_disable_lp(void)
 {
 	MNH_DDR_CTL_OUTf(124, LP_AUTO_SR_MC_GATE_IDLE, 0x00);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_MEM_GATE_EN, 0x0);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_ENTRY_EN, 0x0);
 	MNH_DDR_CTL_OUTf(122, LP_AUTO_EXIT_EN, 0x0);
-	mnh_ddr_send_lp_cmd(dev, LP_CMD_EXIT_LP);
+	mnh_ddr_send_lp_cmd(LP_CMD_EXIT_LP);
 }
 
-static void mnh_ddr_init_internal_state(struct mnh_ddr_internal_state *_state,
-					const struct mnh_ddr_reg_config *cfg)
+static void mnh_ddr_init_internal_state(const struct mnh_ddr_reg_config *cfg)
 {
 	_state->ctl_base = HWIO_DDR_CTL_BASE_ADDR;
 	_state->pi_base = HWIO_DDR_PI_BASE_ADDR;
@@ -285,11 +301,8 @@ static void mnh_ddr_init_internal_state(struct mnh_ddr_internal_state *_state,
 	_state->tref[3] = cfg->ctl[59] & 0xFFFF;
 }
 
-static void mnh_ddr_init_clocks(struct mnh_ddr_data *data)
+static void mnh_ddr_init_clocks(struct device *dev)
 {
-	struct device *dev = &data->pdev->dev;
-	struct mnh_ddr_internal_state *_state = &data->_state;
-
 	int timeout = 0;
 
 	/* MNH_PLL_PASSCODE_SET */
@@ -312,44 +325,42 @@ static void mnh_ddr_init_clocks(struct mnh_ddr_data *data)
 		dev_dbg(dev, "%s lpddr4 pll locked after %d iterations",
 			 __func__, timeout);
 
-	WRITE_SCU_FSP(_state, 0);
-	WRITE_SCU_FSP(_state, 1);
-	WRITE_SCU_FSP(_state, 2);
-	WRITE_SCU_FSP(_state, 3);
+	WRITE_SCU_FSP(0);
+	WRITE_SCU_FSP(1);
+	WRITE_SCU_FSP(2);
+	WRITE_SCU_FSP(3);
 
-	WRITE_CLK_FROM_FSP(dev, _state, SAVED_FSP(_state));
+	WRITE_CLK_FROM_FSP(SAVED_FSP());
 	dev_dbg(dev, "%s lpddr4 pll locked", __func__);
 	MNH_SCU_OUTf(LPDDR4_LOW_POWER_CFG, LP4_FSP_SW_OVERRIDE, 0);
 	/* MNH_PLL_PASSCODE_CLR */
 	MNH_SCU_OUTf(PLL_PASSCODE, PASSCODE, 0x0);
 }
 
-static void mnh_ddr_pull_config(struct mnh_ddr_data *data)
+static void mnh_ddr_pull_config(void)
 {
-	struct mnh_ddr_internal_state *_state = &data->_state;
-
 	int index, fsp;
 	for (index = 0; index < MNH_DDR_NUM_CTL_REG; index++)
-		SAVE_DDR_REG_CONFIG(_state, ctl, index);
-	CLR_START(_state, ctl);
+		SAVE_DDR_REG_CONFIG(ctl, index);
+	CLR_START(ctl);
 
 	for (index = 0; index < MNH_DDR_NUM_PI_REG; index++)
-		SAVE_DDR_REG_CONFIG(_state, pi, index);
-	CLR_START(_state, pi);
+		SAVE_DDR_REG_CONFIG(pi, index);
+	CLR_START(pi);
 
 	for (fsp = 0; fsp < MNH_DDR_NUM_FSPS; fsp++) {
 		MNH_DDR_PHY_OUTf(1025, PHY_FREQ_SEL_INDEX, fsp);
 		for (index = 0; index < MNH_DDR_NUM_PHY_REG; index++)
-			SAVE_DDR_PHY_REG_CONFIG(_state, fsp, index);
+			SAVE_DDR_PHY_REG_CONFIG(fsp, index);
 	}
 }
 
-int mnh_ddr_suspend(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
+int mnh_ddr_suspend(struct device *dev, struct gpio_desc *iso_n)
 {
-	struct device *dev = &data->pdev->dev;
-	struct mnh_ddr_internal_state *_state = &data->_state;
+	if (WARN_ON(!_state))
+		return -ENOMEM;
 
-	mnh_ddr_disable_lp(dev);
+	mnh_ddr_disable_lp();
 
 	dev_dbg(dev, "%s: tref 0x%04x 0x%04x 0x%04x 0x%04x\n",
 		__func__, MNH_DDR_CTL_INf(56, TREF_F0),
@@ -370,10 +381,10 @@ int mnh_ddr_suspend(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 
 	/* resume to fsp3 */
 	mnh_lpddr_freq_change(LPDDR_FREQ_FSP3);
-	SAVE_CURRENT_FSP(dev, _state);
-	mnh_ddr_pull_config(data);
+	SAVE_CURRENT_FSP();
+	mnh_ddr_pull_config();
 
-	mnh_ddr_send_lp_cmd(dev, LP_CMD_DSRPD);
+	mnh_ddr_send_lp_cmd(LP_CMD_DSRPD);
 	dev_dbg(dev, "%s LP_STATE is 0x%x", __func__,
 		MNH_DDR_CTL_INf(121, LP_STATE));
 
@@ -393,27 +404,30 @@ int mnh_ddr_suspend(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 }
 EXPORT_SYMBOL(mnh_ddr_suspend);
 
-int mnh_ddr_resume(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
+int mnh_ddr_resume(struct device *dev, struct gpio_desc *iso_n)
 {
-	struct device *dev = &data->pdev->dev;
-	struct mnh_ddr_internal_state *_state = &data->_state;
-
 	int index, fsp;
 	int timeout = 0;
 
-	mnh_ddr_init_clocks(data);
+	if (WARN_ON(!_state))
+		return -ENOMEM;
+
+	mnh_ddr_init_clocks(dev);
+
+	if (!mnh_ddr_sanity_check())
+		return -EIO;
 
 	for (index = 0; index < MNH_DDR_NUM_CTL_REG; index++)
-		WRITE_DDR_REG_CONFIG(_state, ctl, index);
+		WRITE_DDR_REG_CONFIG(ctl, index);
 
-	MNH_DDR_CTL_OUTf(23, DFIBUS_FREQ_INIT, SAVED_FSP(_state));
+	MNH_DDR_CTL_OUTf(23, DFIBUS_FREQ_INIT, SAVED_FSP());
 	MNH_DDR_CTL_OUTf(23, DFIBUS_BOOT_FREQ, 0);
 
 	MNH_DDR_CTL_OUTf(23, PHY_INDEP_TRAIN_MODE, 0);
 	MNH_DDR_CTL_OUTf(23, CDNS_INTRL0, 1);
 
 	for (index = 0; index < MNH_DDR_NUM_PI_REG; index++)
-		WRITE_DDR_REG_CONFIG(_state, pi, index);
+		WRITE_DDR_REG_CONFIG(pi, index);
 
 	for (fsp = 0; fsp < MNH_DDR_NUM_FSPS; fsp++) {
 		MNH_DDR_PHY_OUTf(1025, PHY_FREQ_SEL_MULTICAST_EN, 0);
@@ -421,7 +435,7 @@ int mnh_ddr_resume(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 
 		for (index = 0; index < MNH_DDR_NUM_PHY_REG; index++) {
 			if (index != 1025)
-				WRITE_DDR_PHY_CONFIG(_state, fsp, index);
+				WRITE_DDR_PHY_CONFIG(fsp, index);
 		}
 		MNH_DDR_PHY_OUTf(1084, PHY_CAL_CLK_SELECT_0, 0x4);
 	}
@@ -456,16 +470,16 @@ int mnh_ddr_resume(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 
 	if (!mnh_ddr_int_status_bit(INIT_DONE_SBIT)) {
 		dev_err(dev, "%s time out on init done %llx.\n",
-			__func__, mnh_ddr_int_status(dev));
+			__func__, mnh_ddr_int_status());
 		return -ETIMEDOUT;
 	}
 
 	/* need to clear PWRUP_SREFRESH_EXIT to clear interrupt status bit 0 */
 	MNH_DDR_CTL_OUTf(81, PWRUP_SREFRESH_EXIT, 0);
 	dev_dbg(dev, "%s got init done %llx.\n", __func__,
-		mnh_ddr_int_status(dev));
-	mnh_ddr_clr_int_status(dev);
-	mnh_lpddr_freq_change(SAVED_FSP(_state));
+		mnh_ddr_int_status());
+	mnh_ddr_clr_int_status();
+	mnh_lpddr_freq_change(SAVED_FSP());
 
 	dev_dbg(dev, "%s: tref 0x%04x 0x%04x 0x%04x 0x%04x\n",
 		__func__, MNH_DDR_CTL_INf(56, TREF_F0),
@@ -478,38 +492,39 @@ int mnh_ddr_resume(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 }
 EXPORT_SYMBOL(mnh_ddr_resume);
 
-int mnh_ddr_po_init(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
+int mnh_ddr_po_init(struct device *dev, struct gpio_desc *iso_n)
 {
-	struct device *dev = &data->pdev->dev;
-	struct mnh_ddr_internal_state *_state = &data->_state;
-
 	int index, setindex;
 	unsigned long timeout;
 	const struct mnh_ddr_reg_config *cfg = &mnh_ddr_33_100_400_600;
 
-	mnh_ddr_init_internal_state(_state, cfg);
+	if (WARN_ON(!_state))
+		return -ENOMEM;
 
+	mnh_ddr_init_internal_state(cfg);
 	dev_dbg(dev, "%s start.", __func__);
 
 	/* deassert iso_n */
 	gpiod_set_value_cansleep(iso_n, 1);
+	mnh_ddr_init_clocks(dev);
 
-	mnh_ddr_init_clocks(data);
+	if (!mnh_ddr_sanity_check())
+		return -EIO;
 
 	for (index = 0; index < MNH_DDR_NUM_CTL_REG; index++)
-		WRITE_DDR_REG_CONFIG(_state, ctl, index);
+		WRITE_DDR_REG_CONFIG(ctl, index);
 
 	/* Make sure DRAM will request refresh rate adjustments */
 	MNH_DDR_CTL_OUTf(164, MR13_DATA_0, 0xD0);
 
 	for (index = 0; index < MNH_DDR_NUM_PI_REG; index++)
-		WRITE_DDR_REG_CONFIG(_state, pi, index);
+		WRITE_DDR_REG_CONFIG(pi, index);
 
 	MNH_DDR_PHY_OUTf(1025, PHY_FREQ_SEL_MULTICAST_EN, 1);
 	MNH_DDR_PHY_OUTf(1025, PHY_FREQ_SEL_INDEX, 0);
 
 	for (index = 0; index < MNH_DDR_NUM_PHY_REG; index++)
-		WRITE_DDR_PHY_CONFIG(_state, 0, index);
+		WRITE_DDR_PHY_CONFIG(0, index);
 
 	MNH_DDR_PHY_OUTf(1025, PHY_FREQ_SEL_MULTICAST_EN, 0);
 	MNH_DDR_PHY_OUTf(1025, PHY_FREQ_SEL_INDEX, 1);
@@ -518,9 +533,8 @@ int mnh_ddr_po_init(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 	setindex = 0;
 	while ((setindex < MNH_DDR_PHY_SET_SIZE) &&
 		(cfg->phy_setA[setindex][0] != 0xFFFFFFFF)) {
-		WRITE_SET_ELEMENT(_state,
-				  cfg->phy_setA[setindex][0],
-				  cfg->phy_setA[setindex][1]);
+		WRITE_SET_ELEMENT(cfg->phy_setA[setindex][0],
+			cfg->phy_setA[setindex][1]);
 		setindex++;
 	}
 
@@ -530,9 +544,8 @@ int mnh_ddr_po_init(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 	setindex = 0;
 	while ((setindex < MNH_DDR_PHY_SET_SIZE) &&
 		(cfg->phy_setB[setindex][0] != 0xFFFFFFFF)) {
-		WRITE_SET_ELEMENT(_state,
-				  cfg->phy_setB[setindex][0],
-				  cfg->phy_setB[setindex][1]);
+		WRITE_SET_ELEMENT(cfg->phy_setB[setindex][0],
+			cfg->phy_setB[setindex][1]);
 		setindex++;
 	}
 
@@ -551,9 +564,9 @@ int mnh_ddr_po_init(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 	}
 
 	dev_dbg(dev, "%s got init done %llx.\n", __func__,
-		 mnh_ddr_int_status(dev));
+		 mnh_ddr_int_status());
 
-	mnh_ddr_clr_int_status(dev);
+	mnh_ddr_clr_int_status();
 	MNH_DDR_CTL_OUTf(165, MR_FSP_DATA_VALID_F0_0, 1);
 	MNH_DDR_CTL_OUTf(165, MR_FSP_DATA_VALID_F1_0, 1);
 	MNH_DDR_CTL_OUTf(165, MR_FSP_DATA_VALID_F2_0, 1);
@@ -573,10 +586,8 @@ int mnh_ddr_po_init(struct mnh_ddr_data *data, struct gpio_desc *iso_n)
 }
 EXPORT_SYMBOL(mnh_ddr_po_init);
 
-u32 mnh_ddr_mbist(struct mnh_ddr_data *data, enum mnh_ddr_bist_type bist_type)
+u32 mnh_ddr_mbist(struct device *dev, enum mnh_ddr_bist_type bist_type)
 {
-	struct device *dev = &data->pdev->dev;
-
 	u32 result = 0;
 	u32 timeout = 1000000;
 	const u32 pattern[] = {
@@ -595,7 +606,7 @@ u32 mnh_ddr_mbist(struct mnh_ddr_data *data, enum mnh_ddr_bist_type bist_type)
 		return 0;
 	}
 
-	mnh_ddr_disable_lp(dev);
+	mnh_ddr_disable_lp();
 
 	old_in_order_accept = MNH_DDR_CTL_INf(223, IN_ORDER_ACCEPT);
 	MNH_DDR_CTL_OUTf(223, IN_ORDER_ACCEPT, 1);
@@ -625,14 +636,14 @@ u32 mnh_ddr_mbist(struct mnh_ddr_data *data, enum mnh_ddr_bist_type bist_type)
 
 	if (!mnh_ddr_int_status_bit(BIST_SBIT)) {
 		dev_err(dev, "%s: BIST timedout: %llx\n",
-			__func__, mnh_ddr_int_status(dev));
+			__func__, mnh_ddr_int_status());
 	} else {
 		result = MNH_DDR_CTL_INf(171, BIST_RESULT);
 		dev_info(dev, "%s: result 0x%02x\n", __func__, result);
 	}
 
 	MNH_DDR_CTL_OUTf(171, BIST_GO, 0);
-	mnh_ddr_clr_int_status(dev);
+	mnh_ddr_clr_int_status();
 
 	MNH_DDR_CTL_OUTf(223, IN_ORDER_ACCEPT,
 		old_in_order_accept);
@@ -642,10 +653,15 @@ u32 mnh_ddr_mbist(struct mnh_ddr_data *data, enum mnh_ddr_bist_type bist_type)
 }
 EXPORT_SYMBOL(mnh_ddr_mbist);
 
-int mnh_ddr_platform_init(struct platform_device *pdev,
-			  struct mnh_ddr_data *data)
+int mnh_ddr_platform_init(struct device *dev)
 {
-	data->pdev = pdev;
+	dev_dbg(dev, "%s\n", __func__);
+
+	_state = devm_kzalloc(dev, sizeof(struct mnh_ddr_internal_state),
+			      GFP_KERNEL);
+	if (!_state)
+		return -ENOMEM;
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mnh_ddr_platform_init);

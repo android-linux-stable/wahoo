@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, 2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -206,7 +206,7 @@ static int msm_lmh_dcvs_write(uint32_t node_id, uint32_t fn,
 	uint32_t payload_len;
 
 	payload_len = ((enable_val1) ? 6 : 5) * sizeof(uint32_t);
-	payload = kcalloc((enable_val1) ? 6 : 5, sizeof(uint32_t), GFP_KERNEL);
+	payload = kzalloc(payload_len, GFP_KERNEL);
 	if (!payload)
 		return -ENOMEM;
 
@@ -230,7 +230,6 @@ static int msm_lmh_dcvs_write(uint32_t node_id, uint32_t fn,
 	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_LMH, MSM_LIMITS_DCVSH), &desc_arg);
 
 	kfree(payload);
-
 	return ret;
 }
 
@@ -359,6 +358,7 @@ static int lmh_set_max_limit(int cpu, u32 freq)
 	return msm_lmh_dcvs_write(hw->affinity, MSM_LIMITS_SUB_FN_THERMAL,
 				MSM_LIMIT_FREQ_CAP, freq,
 				freq >= hw->max_freq ? 0 : 1, 1);
+
 }
 
 static int lmh_get_cur_limit(int cpu, unsigned long *freq)
@@ -442,7 +442,7 @@ static int msm_lmh_dcvs_probe(struct platform_device *pdev)
 
 	/* Enable the thermal algorithm early */
 	ret = msm_lmh_dcvs_write(hw->affinity, MSM_LIMITS_SUB_FN_THERMAL,
-		 MSM_LIMITS_ALGO_MODE_ENABLE, 1, 0, 0);
+				 MSM_LIMITS_ALGO_MODE_ENABLE, 1, 0, 0);
 	if (ret)
 		return ret;
 

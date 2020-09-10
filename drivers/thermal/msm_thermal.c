@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1027,7 +1027,7 @@ static int msm_lmh_dcvs_write(uint32_t node_id, uint32_t fn,
 	uint32_t payload_len;
 
 	payload_len = ((enable_val1) ? 6 : 5) * sizeof(uint32_t);
-	payload = kcalloc((enable_val1) ? 6 : 5, sizeof(uint32_t), GFP_KERNEL);
+	payload = kzalloc(payload_len, GFP_KERNEL);
 	if (!payload)
 		return -ENOMEM;
 
@@ -1051,7 +1051,6 @@ static int msm_lmh_dcvs_write(uint32_t node_id, uint32_t fn,
 	ret = scm_call2(SCM_SIP_FNID(SCM_SVC_LMH, MSM_LIMITS_DCVSH), &desc_arg);
 
 	kfree(payload);
-
 	return ret;
 }
 
@@ -1066,7 +1065,7 @@ static int msm_lmh_dcvs_update(int cpu)
 	 * It is better to use max limits of cluster for given
 	 * cpu if cluster mitigation is supported. It ensures that it
 	 * requests aggregated max limits of all cpus in that cluster.
-	 */
+	 * */
 	if (core_ptr)
 		max_freq = cpus[cpu].parent_ptr->limited_max_freq;
 
@@ -1088,8 +1087,9 @@ static int msm_lmh_dcvs_update(int cpu)
 				cpus[cpu].parent_ptr->freq_idx_high].frequency;
 
 	ret = msm_lmh_dcvs_write(affinity, MSM_LIMITS_SUB_FN_THERMAL,
-					MSM_LIMITS_FREQ_CAP, max_freq,
-					max_freq >= hw_max_freq ? 0 : 1, 1);
+				 MSM_LIMITS_FREQ_CAP, max_freq,
+				 max_freq >= hw_max_freq ? 0 : 1, 1);
+
 	if (ret)
 		return ret;
 	/*

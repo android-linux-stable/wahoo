@@ -492,7 +492,7 @@ static int glink_spi_xprt_rx_cmd(struct edge_info *einfo, void *dst,
 					- read_id;
 
 		if ((offset + size_to_read) > size) {
-			pr_err("%s:wrong sz split_sz %u bufsz %u offset %u\n",
+			pr_err("%s:split_size %u buf size %u offset %u\n",
 				__func__, size_to_read, size, offset);
 			return -EINVAL;
 		}
@@ -549,7 +549,7 @@ static int glink_spi_xprt_tx_cmd_safe(struct edge_info *einfo, void *src,
 					- write_id;
 
 		if ((offset + size_to_write) > size) {
-			pr_err("%s:wrong sz split_sz %u bufsz %u offset %u\n",
+			pr_err("%s:split_size %u buf size %u offset %u\n",
 				__func__, size_to_write, size, offset);
 			return -EINVAL;
 		}
